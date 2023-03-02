@@ -1,3 +1,8 @@
+Problem:
+1, 2, 3, 5, 8, 13, 21, 34, 55, 89,...
+
+Considerando os termos da sequência de Fibonacci cujos valores não excedem quatro milhões, encontre a soma dos termos de valor par
+
 Explicando o código:
 
 A função fibonacci(n) recebe um número n como argumento e retorna a sequência de Fibonacci com os valores menores que n.
