@@ -1,6 +1,4 @@
-Aqui está o `README.md` no formato para o GitHub para o programa **bitpy 66**:
 
-```markdown
 # bitpy 66
 
 **bitpy 66** é um programa desenvolvido em Python para realizar uma busca por uma chave privada específica em um espaço de chaves de 66 bits. Ele utiliza diversas técnicas avançadas de busca e otimização para maximizar a eficiência da busca, mesmo em um espaço de busca extremamente vasto. O objetivo final do programa é encontrar uma chave privada que corresponda a um endereço Bitcoin específico, permitindo o acesso a fundos associados a esse endereço.
