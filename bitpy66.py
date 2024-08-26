@@ -4,10 +4,10 @@ import os
 import random
 import time
 import signal
+from collections import deque
 from Crypto.PublicKey import ECC
 from Crypto.Hash import SHA256
 from bloom_filter import BloomFilter
-from collections import deque
 from multiprocessing import Value, Lock
 
 # Configurações da chave
@@ -16,44 +16,6 @@ TOTAL_KEYS = 2 ** KEY_BITS
 
 # Endereço específico a ser encontrado
 TARGET_ADDRESS = '13zb1hQbWVsc2S7ZTZnP2G4undNNpdh5so'
-
-# Função para perguntar ao usuário quantos GB de RAM e quantos threads usar
-def get_user_input():
-    while True:
-        try:
-            ram_gb = int(input("Quantos GB de RAM você deseja usar (Máximo 16 GB): "))
-            if 0 < ram_gb <= 16:
-                break
-            else:
-                print("Por favor, insira um valor entre 1 e 16.")
-        except ValueError:
-            print("Por favor, insira um número válido.")
-    
-    while True:
-        try:
-            num_threads = int(input(f"Quantos threads (núcleos de CPU) você deseja usar (Máximo {multiprocessing.cpu_count()}): "))
-            if 0 < num_threads <= multiprocessing.cpu_count():
-                break
-            else:
-                print(f"Por favor, insira um valor entre 1 e {multiprocessing.cpu_count()}.")
-        except ValueError:
-            print("Por favor, insira um número válido.")
-    
-    return ram_gb, num_threads
-
-# Configurações do Bloom Filter para evitar chaves duplicadas
-ram_gb, num_threads = get_user_input()  # Solicitar entrada do usuário
-estimated_elements = ram_gb * 10**7  # Estimar elementos com base no RAM disponível
-false_positive_rate = 0.001  # 0,1% de taxa de erro
-bloom_filter = BloomFilter(max_elements=estimated_elements, error_rate=false_positive_rate)
-
-# Configurações do Reservoir Sampling
-RESERVOIR_SIZE = 100000  # Tamanho do reservatório para amostragem
-reservoir = deque(maxlen=RESERVOIR_SIZE)
-
-# Variável global para contar chaves processadas
-key_count_global = Value('i', 0)
-lock = Lock()
 
 # Função para gerar chaves privadas a partir de um número inteiro
 def generate_key_from_int(n):
@@ -72,17 +34,8 @@ def public_key_to_address(public_key):
 def is_target_address(address):
     return address == TARGET_ADDRESS
 
-# Função para adicionar chave ao reservatório
-def add_to_reservoir(key):
-    if len(reservoir) < RESERVOIR_SIZE:
-        reservoir.append(key)
-    else:
-        # Substitui aleatoriamente uma chave no reservatório
-        index = random.randint(0, RESERVOIR_SIZE - 1)
-        reservoir[index] = key
-
 # Função principal de busca aleatória com heurísticas e contador
-def search_wallet_randomly(start, end, key_count_global):
+def search_wallet_randomly(start, end, key_count_global, lock, bloom_filter, reservoir):
     try:
         while True:
             # Aplicação de heurísticas para gerar uma chave
@@ -98,7 +51,7 @@ def search_wallet_randomly(start, end, key_count_global):
 
             # Marca a chave como utilizada
             bloom_filter.add(random_key)
-            add_to_reservoir(random_key)
+            reservoir.append((private_key, public_key))
 
             with lock:
                 key_count_global.value += 1
@@ -115,7 +68,7 @@ def search_wallet_randomly(start, end, key_count_global):
         print(f"Erro no processo: {e}")
 
 # Função para mostrar o progresso total a cada 60 segundos
-def log_progress(key_count_global, start_time):
+def log_progress(key_count_global, start_time, lock):
     try:
         while True:
             time.sleep(60)
@@ -128,7 +81,7 @@ def log_progress(key_count_global, start_time):
         print(f"Erro no log: {e}")
 
 # Função para gerenciar o pool de processos
-def parallel_search(num_processes):
+def parallel_search(num_processes, bloom_filter, reservoir):
     processes = []
 
     def start_processes():
@@ -139,13 +92,13 @@ def parallel_search(num_processes):
             if i == num_processes - 1:
                 end = TOTAL_KEYS - 1  # Garantir que o último processo vá até o final
 
-            process = multiprocessing.Process(target=search_wallet_randomly, args=(start, end, key_count_global))
+            process = multiprocessing.Process(target=search_wallet_randomly, args=(start, end, key_count_global, lock, bloom_filter, reservoir))
             processes.append(process)
             process.start()
 
     # Iniciar o processo de logging
     start_time = time.time()
-    log_process = multiprocessing.Process(target=log_progress, args=(key_count_global, start_time))
+    log_process = multiprocessing.Process(target=log_progress, args=(key_count_global, start_time, lock))
     log_process.start()
 
     start_processes()
@@ -168,4 +121,20 @@ def parallel_search(num_processes):
                 start_processes()
 
 if __name__ == "__main__":
-    parallel_search(num_threads)  # Usar o número de threads especificado pelo usuário
+    # Captura a quantidade de memória RAM e threads que o usuário deseja usar
+    ram_gb = int(input("Quantos GB de RAM você deseja usar: "))
+    threads = int(input("Quantos threads (núcleos de CPU) você deseja usar: "))
+
+    # Configurações do Bloom Filter para evitar chaves duplicadas
+    estimated_elements = (ram_gb * 10**7)  # Estimativa baseada na quantidade de RAM desejada
+    false_positive_rate = 0.001  # 0,1% de taxa de erro
+    bloom_filter = BloomFilter(max_elements=estimated_elements, error_rate=false_positive_rate)
+
+    # Variável global para contar chaves processadas
+    key_count_global = Value('i', 0)
+    lock = Lock()
+
+    # Configuração do reservatório como deque
+    reservoir = deque(maxlen=100)
+
+    parallel_search(threads, bloom_filter, reservoir)
